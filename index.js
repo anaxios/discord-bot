@@ -71,6 +71,7 @@ async function initOpenAI(messageStore) {
       apiKey: process.env.OPENAI_API_KEY,
       completionParams: {
         model: process.env.MODEL,
+	      temperature: parseFloat(process.env.TEMPERATURE),
       },
       messageStore,
       debug: process.env.DEBUG
