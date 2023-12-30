@@ -1,10 +1,10 @@
 // Imports
+import chalk from 'chalk';
 import dotenv from 'dotenv'; dotenv.config();
 import { ChatGPTAPI } from 'chatgpt';
 import Keyv from 'keyv';
 import http from 'http';
 import axios from 'axios';
-import chalk from 'chalk';
 import figlet from 'figlet';
 import gradient from 'gradient-string';
 import admin from 'firebase-admin';
@@ -25,18 +25,6 @@ import path from 'path';
 const activity = '/ask && /help';
 
 
-async function loadCommands() {
-  const commands = new Array();
-  const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-
-  for (const file of commandFiles) {
-    const { default: Command } = await import(path.resolve('./commands', file));
-    const command = new Command();
-    commands.push(command.properties);
-  }
-  console.log(commands);
-  return commands;
-}
 
 
 // // Discord Slash Commands Defines
@@ -108,6 +96,19 @@ async function initOpenAI(messageStore) {
     return api;
   }
 }
+
+async function loadCommands() {
+  const commands = new Array();
+  const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+
+  for (const file of commandFiles) {
+    const { default: Command } = await import(path.resolve('./commands', file));
+    const command = new Command(api, client, db);
+    commands.push(command.properties);
+  }
+  return commands;
+}
+
 
 // Initialize Discord Application Commands & New ChatGPT Thread
 async function initDiscordCommands() {
@@ -182,22 +183,30 @@ async function main() {
 
     client.user.setActivity(interaction.user.tag, { type: ActivityType.Watching });
 
-    switch (interaction.commandName) {
-      case "ask":
-        ask_Interaction_Handler(interaction);
-        break;
-      case "ping":
-        ping_Interaction_Handler(interaction);
-        break;
-      case "help":
-        help_Interaction_Handler(interaction);
-        break;
-      case 'reset-chat':
-        reset_chat_Interaction_Handler(interaction);
-        break;
-      default:
-        await interaction.reply({ content: 'Command Not Found' });
-    }
+    const { default: Command } = await import(path.resolve('./commands', interaction.commandName + '.js'));
+    const command = new Command(api, client, db);
+    command.execute(interaction);
+
+    // switch (interaction.commandName) {
+    //   case "ask":
+    //     ask_Interaction_Handler(interaction);
+    //     break;
+    //   case "ping":
+    //     // const {default: Command} = await import(path.resolve('./commands', 'ping.js'));
+    //     // const command = new Command();
+    //     // command.execute(client, interaction);
+    //     break;
+    //   case "help":
+    //     help_Interaction_Handler(interaction);
+    //     break;
+    //   case 'reset-chat':
+    //     const {default: Command} = await import(path.resolve('./commands', 'reset-chat.js'));
+    //     const command = new Command();
+    //     command.execute(client, db, interaction);
+    //     break;
+    //   default:
+    //     await interaction.reply({ content: 'Command Not Found' });
+    // }
   });
 
   // Direct Message Handler
@@ -273,151 +282,155 @@ async function main() {
     }
   });
 
-  async function ping_Interaction_Handler(interaction) {
-    const sent = await interaction.reply({ content: 'Pinging...🌐', fetchReply: true });
-    await interaction.editReply(`Websocket Heartbeat: ${interaction.client.ws.ping} ms. \nRoundtrip Latency: ${sent.createdTimestamp - interaction.createdTimestamp} ms\n</>`);
-    client.user.setActivity(activity);
-  }
+  // async function ping_Interaction_Handler(interaction) {
+  //   // Assuming 'client' is your instance of the Discord.Client object and 'channelId' is the ID of the channel
+  //   const channel = await client.channels.fetch(interaction.channel.id);
+  //   await channel.sendTyping();
+  //   const sent = await interaction.reply({ content: 'Pinging...🌐', fetchReply: true });
+  //   await interaction.editReply(`Websocket Heartbeat: ${interaction.client.ws.ping} ms. \nRoundtrip Latency: ${sent.createdTimestamp - interaction.createdTimestamp} ms\n</>`);
+  //        // channel.stopTyping();
+  //   client.user.setActivity(activity);
+  // }
 
-  async function help_Interaction_Handler(interaction) {
-    await interaction.reply("**ChatGPT Discord Bot**\nA Discord Bot Powered By OpenAI's ChatGPT !\n\n**Usage:**\nDM - Ask Anything\n`/ask` - Ask Anything\n`/reset-chat` - Start A Fresh Chat Session\n`/ping` - Check Websocket Heartbeat && Roundtrip Latency\n\nSource Code: <https://github.com/itskdhere/ChatGPT-Discord-BOT>\nSupport Server: https://dsc.gg/skdm");
-    client.user.setActivity(activity);
-  }
+  // async function help_Interaction_Handler(interaction) {
+  //   await interaction.reply("**ChatGPT Discord Bot**\nA Discord Bot Powered By OpenAI's ChatGPT !\n\n**Usage:**\nDM - Ask Anything\n`/ask` - Ask Anything\n`/reset-chat` - Start A Fresh Chat Session\n`/ping` - Check Websocket Heartbeat && Roundtrip Latency\n\nSource Code: <https://github.com/itskdhere/ChatGPT-Discord-BOT>\nSupport Server: https://dsc.gg/skdm");
+  //   client.user.setActivity(activity);
+  // }
 
-  async function reset_chat_Interaction_Handler(interaction) {
-    const timeStamp = new Date();
-    const date = timeStamp.getUTCDate().toString() + '.' + timeStamp.getUTCMonth().toString() + '.' + timeStamp.getUTCFullYear().toString();
-    const time = timeStamp.getUTCHours().toString() + ':' + timeStamp.getUTCMinutes().toString() + ':' + timeStamp.getUTCSeconds().toString();
-    await interaction.reply('Checking...📚');
-    const doc = await db.collection('users').doc(interaction.user.id).get();
-    if (!doc.exists) {
-      console.log('Failed: No Conversation Found ❌');
-      await interaction.editReply('No Conversation Found ❌\nUse `/ask` To Start One\n</>');
-      await db.collection('reset-chat-log').doc(interaction.user.id)
-        .collection(date).doc(time).set({
-          timeStamp: new Date(),
-          userID: interaction.user.id,
-          user: interaction.user.tag,
-          resetChatSuccess: 0
-        });
-    } else {
-      await db.collection('users').doc(interaction.user.id).delete();
-      console.log('Chat Reset: Successful ✅');
-      await interaction.editReply('Chat Reset: Successful ✅\n</>');
-      await db.collection('reset-chat-log').doc(interaction.user.id)
-        .collection(date).doc(time).set({
-          timeStamp: new Date(),
-          userID: interaction.user.id,
-          user: interaction.user.tag,
-          resetChatSuccess: 1
-        });
-    }
+  // async function reset_chat_Interaction_Handler(interaction) {
+  //   const timeStamp = new Date();
+  //   const date = timeStamp.getUTCDate().toString() + '.' + timeStamp.getUTCMonth().toString() + '.' + timeStamp.getUTCFullYear().toString();
+  //   const time = timeStamp.getUTCHours().toString() + ':' + timeStamp.getUTCMinutes().toString() + ':' + timeStamp.getUTCSeconds().toString();
+  //   await interaction.reply('Checking...📚');
+  //   const doc = await db.collection('users').doc(interaction.user.id).get();
+  //   if (!doc.exists) {
+  //     console.log('Failed: No Conversation Found ❌');
+  //     await interaction.editReply('No Conversation Found ❌\nUse `/ask` To Start One\n</>');
+  //     await db.collection('reset-chat-log').doc(interaction.user.id)
+  //       .collection(date).doc(time).set({
+  //         timeStamp: new Date(),
+  //         userID: interaction.user.id,
+  //         user: interaction.user.tag,
+  //         resetChatSuccess: 0
+  //       });
+  //   } else {
+  //     await db.collection('users').doc(interaction.user.id).delete();
+  //     console.log('Chat Reset: Successful ✅');
+  //     await interaction.editReply('Chat Reset: Successful ✅\n</>');
+  //     await db.collection('reset-chat-log').doc(interaction.user.id)
+  //       .collection(date).doc(time).set({
+  //         timeStamp: new Date(),
+  //         userID: interaction.user.id,
+  //         user: interaction.user.tag,
+  //         resetChatSuccess: 1
+  //       });
+  //   }
 
-    client.user.setActivity(activity);
-  }
+  //   client.user.setActivity(activity);
+  // }
 
-  async function ask_Interaction_Handler(interaction) {
-    const question = interaction.options.getString("question");
+  // async function ask_Interaction_Handler(interaction) {
+  //   const question = interaction.options.getString("question");
 
-    console.log("----------Channel Message--------");
-    console.log("Date & Time : " + new Date());
-    console.log("UserId      : " + interaction.user.id);
-    console.log("User        : " + interaction.user.tag);
-    console.log("Question    : " + question);
+  //   console.log("----------Channel Message--------");
+  //   console.log("Date & Time : " + new Date());
+  //   console.log("UserId      : " + interaction.user.id);
+  //   console.log("User        : " + interaction.user.tag);
+  //   console.log("Question    : " + question);
 
-    try {
-      await interaction.reply({ content: `Let Me Think 🤔` });
-      askQuestion(question, interaction, async (content) => {
-        if (!content.text) {
-          if (content.length >= process.env.DISCORD_MAX_RESPONSE_LENGTH) {
-            await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** API Error ❌\nCheck DM For Error Log ❗\n</>`);
-            splitAndSendResponse(content, interaction.user);
-          } else {
-            await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** API Error ❌\n\`\`\`\n${content}\n\`\`\`\n</>`);
-          }
-          client.user.setActivity(activity);
-          return;
-        }
+  //   try {
+  //     await interaction.reply({ content: `Let Me Think 🤔` });
+  //     askQuestion(question, interaction, async (content) => {
+  //       if (!content.text) {
+  //         if (content.length >= process.env.DISCORD_MAX_RESPONSE_LENGTH) {
+  //           await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** API Error ❌\nCheck DM For Error Log ❗\n</>`);
+  //           splitAndSendResponse(content, interaction.user);
+  //         } else {
+  //           await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** API Error ❌\n\`\`\`\n${content}\n\`\`\`\n</>`);
+  //         }
+  //         client.user.setActivity(activity);
+  //         return;
+  //       }
 
-        console.log("Response    : " + content.text);
-        console.log("---------------End---------------");
+  //       console.log("Response    : " + content.text);
+  //       console.log("---------------End---------------");
 
-        if (content.text.length >= process.env.DISCORD_MAX_RESPONSE_LENGTH) {
-          await interaction.editReply({ content: "The Answer Is Too Powerful 🤯,\nCheck Your DM 😅" });
-          splitAndSendResponse(content.text, interaction.user);
-        } else {
-          await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** ${content.text}\n</>`);
-        }
-        client.user.setActivity(activity);
-        const timeStamp = new Date();
-        const date = timeStamp.getUTCDate().toString() + '.' + timeStamp.getUTCMonth().toString() + '.' + timeStamp.getUTCFullYear().toString();
-        const time = timeStamp.getUTCHours().toString() + ':' + timeStamp.getUTCMinutes().toString() + ':' + timeStamp.getUTCSeconds().toString();
-        await db.collection('chat-history').doc(interaction.user.id)
-          .collection(date).doc(time).set({
-            timeStamp: new Date(),
-            userID: interaction.user.id,
-            user: interaction.user.tag,
-            question: question,
-            answer: content.text,
-            parentMessageId: content.id
-          });
-      })
-    } catch (e) {
-      console.error(chalk.red(e));
-    }
-  }
+  //       if (content.text.length >= process.env.DISCORD_MAX_RESPONSE_LENGTH) {
+  //         await interaction.editReply({ content: "The Answer Is Too Powerful 🤯,\nCheck Your DM 😅" });
+  //         splitAndSendResponse(content.text, interaction.user);
+  //       } else {
+  //         await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${client.user.username}:** ${content.text}\n</>`);
+  //       }
+  //       client.user.setActivity(activity);
+  //       const timeStamp = new Date();
+  //       const date = timeStamp.getUTCDate().toString() + '.' + timeStamp.getUTCMonth().toString() + '.' + timeStamp.getUTCFullYear().toString();
+  //       const time = timeStamp.getUTCHours().toString() + ':' + timeStamp.getUTCMinutes().toString() + ':' + timeStamp.getUTCSeconds().toString();
+  //       await db.collection('chat-history').doc(interaction.user.id)
+  //         .collection(date).doc(time).set({
+  //           timeStamp: new Date(),
+  //           userID: interaction.user.id,
+  //           user: interaction.user.tag,
+  //           question: question,
+  //           answer: content.text,
+  //           parentMessageId: content.id
+  //         });
+  //     })
+  //   } catch (e) {
+  //     console.error(chalk.red(e));
+  //   }
+}
 
   client
     .login(process.env.DISCORD_BOT_TOKEN)
     .catch(e => console.log(chalk.red(e)));
 
-  async function askQuestion(question, interaction, cb) {
-    const doc = await db.collection('users').doc(interaction.user.id).get();
-    const currentDate = new Date().toISOString();
-    const finalSystemMessage = process.env.SYSTEM_MESSAGE + ` Your Knowledge cutoff is 2021-09-01 and Current Date is ${currentDate}.`
+  // async function askQuestion(question, interaction, cb) {
+  //   const doc = await db.collection('users').doc(interaction.user.id).get();
+  //   const currentDate = new Date().toISOString();
+  //   const finalSystemMessage = process.env.SYSTEM_MESSAGE + ` Your Knowledge cutoff is 2021-09-01 and Current Date is ${currentDate}.`
 
-    if (!doc.exists) {
-      api.sendMessage(question, {
-        systemMessage: finalSystemMessage
-      }).then((response) => {
-        db.collection('users').doc(interaction.user.id).set({
-          timeStamp: new Date(),
-          userId: interaction.user.id,
-          user: interaction.user.tag,
-          parentMessageId: response.id
-        });
-        cb(response);
-      }).catch((err) => {
-        cb(err);
-        console.log(chalk.red("AskQuestion Error:" + err));
-      })
-    } else {
-      api.sendMessage(question, {
-        parentMessageId: doc.data().parentMessageId,
-        systemMessage: finalSystemMessage
-      }).then((response) => {
-        db.collection('users').doc(interaction.user.id).set({
-          timeStamp: new Date(),
-          userId: interaction.user.id,
-          user: interaction.user.tag,
-          parentMessageId: response.id
-        });
-        cb(response);
-      }).catch((err) => {
-        cb(err);
-        console.log(chalk.red("AskQuestion Error:" + err));
-      });
-    }
-  }
+  //   if (!doc.exists) {
+  //     api.sendMessage(question, {
+  //       systemMessage: finalSystemMessage
+  //     }).then((response) => {
+  //       db.collection('users').doc(interaction.user.id).set({
+  //         timeStamp: new Date(),
+  //         userId: interaction.user.id,
+  //         user: interaction.user.tag,
+  //         parentMessageId: response.id
+  //       });
+  //       cb(response);
+  //     }).catch((err) => {
+  //       cb(err);
+  //       console.log(chalk.red("AskQuestion Error:" + err));
+  //     })
+  //   } else {
+  //     api.sendMessage(question, {
+  //       parentMessageId: doc.data().parentMessageId,
+  //       systemMessage: finalSystemMessage
+  //     }).then((response) => {
+  //       db.collection('users').doc(interaction.user.id).set({
+  //         timeStamp: new Date(),
+  //         userId: interaction.user.id,
+  //         user: interaction.user.tag,
+  //         parentMessageId: response.id
+  //       });
+  //       cb(response);
+  //     }).catch((err) => {
+  //       cb(err);
+  //       console.log(chalk.red("AskQuestion Error:" + err));
+  //     });
+  //   }
+  // }
 
-  async function splitAndSendResponse(resp, user) {
-    while (resp.length > 0) {
-      let end = Math.min(process.env.DISCORD_MAX_RESPONSE_LENGTH, resp.length)
-      await user.send(resp.slice(0, end))
-      resp = resp.slice(end, resp.length)
-    }
-  }
-}
+//   async function splitAndSendResponse(resp, user) {
+//     while (resp.length > 0) {
+//       let end = Math.min(process.env.DISCORD_MAX_RESPONSE_LENGTH, resp.length)
+//       await user.send(resp.slice(0, end))
+//       resp = resp.slice(end, resp.length)
+//     }
+//   }
+// }
 
 // HTTP Server
 if (process.env.HTTP_SERVER === 'true') {
