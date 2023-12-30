@@ -18,38 +18,55 @@ import {
 
 // Import Firebase Admin SDK Service Account Private Key
 import firebaseServiceAccount from './firebaseServiceAccountKey.json' assert {type: 'json'};
+import fs from 'fs';
+import path from 'path';
 
 // Defines
 const activity = '/ask && /help';
 
-// Discord Slash Commands Defines
-const commands = [
-  {
-    name: 'ask',
-    description: 'Ask Anything!',
-    dm_permission: false,
-    options: [
-      {
-        name: "question",
-        description: "Your question",
-        type: 3,
-        required: true
-      }
-    ]
-  },
-  {
-    name: 'ping',
-    description: 'Check Websocket Heartbeat && Roundtrip Latency'
-  },
-  {
-    name: 'reset-chat',
-    description: 'Start A Fresh Chat Session'
-  },
-  {
-    name: 'help',
-    description: 'Get Help'
+
+async function loadCommands() {
+  const commands = new Array();
+  const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+
+  for (const file of commandFiles) {
+    const { default: Command } = await import(path.resolve('./commands', file));
+    const command = new Command();
+    commands.push(command.properties);
   }
-];
+  console.log(commands);
+  return commands;
+}
+
+
+// // Discord Slash Commands Defines
+// const commands = [
+//   {
+//     name: 'ask',
+//     description: 'Ask Anything!',
+//     dm_permission: false,
+//     options: [
+//       {
+//         name: "question",
+//         description: "Your question",
+//         type: 3,
+//         required: true
+//       }
+//     ]
+//   },
+//   {
+//     name: 'ping',
+//     description: 'Check Websocket Heartbeat && Roundtrip Latency'
+//   },
+//   {
+//     name: 'reset-chat',
+//     description: 'Start A Fresh Chat Session'
+//   },
+//   {
+//     name: 'help',
+//     description: 'Get Help'
+//   }
+// ];
 
 // Initialize Discord Client
 const client = new Client({
@@ -97,7 +114,7 @@ async function initDiscordCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
   try {
     console.log('Started refreshing application commands (/)');
-    await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID), { body: commands }).then(() => {
+    await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID), { body: await loadCommands() }).then(() => {
       console.log('Successfully reloaded application commands (/)');
     }).catch(e => console.log(chalk.red(e)));
     console.log('Connecting to Discord Gateway...');

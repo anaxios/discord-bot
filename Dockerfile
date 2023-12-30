@@ -6,6 +6,7 @@ COPY package*.json .
 
 RUN npm install
 
+COPY commands ./commands
 COPY index.js .
 
 ENV PORT=$PORT
