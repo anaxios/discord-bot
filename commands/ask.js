@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import AskQuestion from '../AskQuestion.js';
 
 export default class Ask {
     constructor(api, client, db) {
@@ -20,7 +21,7 @@ export default class Ask {
               this.api = api
     }
     async execute(interaction) {
-
+        console.log(interaction);
         const question = interaction.options.getString("question");
 
         console.log("----------Channel Message--------");
@@ -28,10 +29,12 @@ export default class Ask {
         console.log("UserId      : " + interaction.user.id);
         console.log("User        : " + interaction.user.tag);
         console.log("Question    : " + question);
+
+        const askQuestion = new AskQuestion(this.api, this.client, this.db);
     
         try {
           await interaction.reply({ content: `Let Me Think 🤔` });
-          this.askQuestion(question, interaction, async (content) => {
+          askQuestion.ask(question, interaction, async (content) => {
             if (!content.text) {
               if (content.length >= process.env.DISCORD_MAX_RESPONSE_LENGTH) {
                 await interaction.editReply(`**${interaction.user.tag}:** ${question}\n**${this.client.user.username}:** API Error ❌\nCheck DM For Error Log ❗\n</>`);
@@ -76,42 +79,5 @@ export default class Ask {
           resp = resp.slice(end, resp.length)
         }
     }
-    async askQuestion(question, interaction, cb) {
-        const doc = await this.db.collection('users').doc(interaction.user.id).get();
-        const currentDate = new Date().toISOString();
-        const finalSystemMessage = process.env.SYSTEM_MESSAGE + ` Your Knowledge cutoff is 2021-09-01 and Current Date is ${currentDate}.`
     
-        if (!doc.exists) {
-          this.api.sendMessage(question, {
-            systemMessage: finalSystemMessage
-          }).then((response) => {
-            this.db.collection('users').doc(interaction.user.id).set({
-              timeStamp: new Date(),
-              userId: interaction.user.id,
-              user: interaction.user.tag,
-              parentMessageId: response.id
-            });
-            cb(response);
-          }).catch((err) => {
-            cb(err);
-            console.log(chalk.red("AskQuestion Error:" + err));
-          })
-        } else {
-          this.api.sendMessage(question, {
-            parentMessageId: doc.data().parentMessageId,
-            systemMessage: finalSystemMessage
-          }).then((response) => {
-            this.db.collection('users').doc(interaction.user.id).set({
-              timeStamp: new Date(),
-              userId: interaction.user.id,
-              user: interaction.user.tag,
-              parentMessageId: response.id
-            });
-            cb(response);
-          }).catch((err) => {
-            cb(err);
-            console.log(chalk.red("AskQuestion Error:" + err));
-          });
-        }
-      }
 };
